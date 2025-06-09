@@ -1,9 +1,5 @@
 <?php
-//Your Settings can be read here: settings::read('myArray/settingName') = $settingValue;
-//Your Settings can be saved here: settings::set('myArray/settingName',$settingValue,$overwrite = true/false);
 class minecraft_releases_api{
-    //public static function command($line):void{}//Run when base command is class name, $line is anything after base command (string). e.g. > [base command] [$line]
-    //public static function init():void{}//Run at startup
     public static function getLatest($type = "release"):string|bool{
         $versionsData = json::readFile("https://launchermeta.mojang.com/mc/game/version_manifest.json",false);
         if(isset($versionsData['latest'])){
@@ -59,14 +55,9 @@ class minecraft_releases_api{
                     $i++;
                     goto start;
                 }
-                else{
-                    return false;
-                }
-            }
-            else{
-                return false;
             }
         }
+        return false;
     }
     public static function listVersions(string $type):array{
         if($type !== "snapshot"){
