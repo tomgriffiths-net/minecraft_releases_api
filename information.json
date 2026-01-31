@@ -1,8 +1,10 @@
 {
-    "dependencies": [],
     "id_name": "minecraft_releases_api",
-    "version": 2,
+    "version": 3,
     "author": "tom",
     "name": "Minecraft Server Releases API",
-    "description": ""
+    "description": "",
+    "dependencies": {
+        "settings": 3
+    }
 }

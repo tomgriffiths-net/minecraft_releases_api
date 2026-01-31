@@ -139,4 +139,17 @@ class minecraft_releases_api{
 
         return $listedVersions;
     }
+    public static function minimumJavaVersion(string $version, bool $autoDownload=false):int|false{
+        $file = self::filePath($version, true, $autoDownload);
+        if(!is_string($file)){
+            return false;
+        }
+
+        $data = json::readFile($file);
+        if(!is_array($data) || !isset($data['javaVersion']['majorVersion']) || !is_int($data['javaVersion']['majorVersion'])){
+            return false;
+        }
+
+        return $data['javaVersion']['majorVersion'];
+    }
 }
