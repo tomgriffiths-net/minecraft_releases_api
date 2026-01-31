@@ -1,75 +1,142 @@
 <?php
 class minecraft_releases_api{
-    public static function getLatest($type = "release"):string|bool{
-        $versionsData = json::readFile("https://launchermeta.mojang.com/mc/game/version_manifest.json",false);
-        if(isset($versionsData['latest'])){
-            if(isset($versionsData['latest'][$type])){
-                $latestRelease = $versionsData['latest'][$type];
-            }
-            else{
-                mklog('warning','Attempt made to download from nonexistant minecraft server type: ' . $type,false);
-            }
-        }
-        if(isset($latestRelease)){
-            return $latestRelease;
-        }
-        else{
-            return false;
+    public static function init():void{
+        $defaultSettings = array(
+            "libraryDir" => "mcservers\\library\\vanilla"
+        );
+
+        foreach($defaultSettings as $settingName => $settingValue){
+            settings::set($settingName, $settingValue, false);
         }
     }
-    public static function downloadVersion(string $version):bool{
-        $versionsData = json::readFile("https://launchermeta.mojang.com/mc/game/version_manifest.json",false);
-        $url = false;
+    public static function setSetting(string $settingName, mixed $settingValue, bool $overwrite):bool{
+        return settings::set($settingName,$settingValue,$overwrite);
+    }
+
+    public static function getLatest(string $type="release"):string|false{
+        if($type !== "snapshot" && $type !== "release"){
+            mklog(2, "Invalid type " . $type);
+            return false;
+        }
+
+        $versionsData = json::readFile("https://launchermeta.mojang.com/mc/game/version_manifest.json");
+        if(!is_array($versionsData)){
+            mklog(2, "Failed to read mojang version manifest");
+            return false;
+        }
+
+        if(!isset($versionsData['latest']) || !is_array($versionsData['latest']) || !isset($versionsData['latest'][$type]) || !is_string($versionsData['latest'][$type])){
+            mklog(2, "Failed to find latest info for " . $type);
+            return false;
+        }
+
+        return $versionsData['latest'][$type];
+    }
+    public static function downloadVersion(string $version):string|false{
+        $versionsData = json::readFile("https://launchermeta.mojang.com/mc/game/version_manifest.json");
+        if(!is_array($versionsData)){
+            mklog(2, "Failed to read mojang version manifest");
+            return false;
+        }
+
+        if(!isset($versionsData['versions']) || !is_array($versionsData['versions'])){
+            mklog(2, "Failed to read versions list");
+            return false;
+        }
+        
+        $url = null;
         foreach($versionsData['versions'] as $versionData){
-            if($versionData['id'] === $version){
+            if(is_array($versionData) && isset($versionData['id']) && $versionData['id'] === $version){
                 $url = $versionData['url'];
                 break;
             }
         }
-        if($url === false){
+        if(!is_string($url)){
             return false;
         }
-        $versionData = json::readFile($url,false);
-        if(isset($versionData['downloads']['server']['url'])){
-            downloader::downloadFile($versionData['downloads']['server']['url'],"mcservers/library/vanilla/" . $version . ".jar");
-            json::writeFile("mcservers/library/vanilla/" . $version . ".json",$versionData,true);
-            return true;
+
+        $versionData = json::readFile($url);
+        if(!is_array($versionData)){
+            mklog(2, "Failed to read mojang version manifest");
+            return false;
         }
-        return false;
-    }
-    public static function filePath(string $version,$metadata = false,$autoDownload = false):bool|string{
-        $dir = "mcservers/library/vanilla/";
-        $ext = ".jar";
-        if($metadata !== false){
-            $ext = ".json";
+
+        if(!isset($versionData['downloads']['server']['url']) || !is_string($versionData['downloads']['server']['url'])){
+            mklog(2, "Failed to get download url");
+            return false;
         }
-        $i = 0;
-        start:
-        if(is_file($dir . $version . $ext)){
-            return $dir . $version . $ext;
+
+        $libraryDir = settings::read("libraryDir");
+        if(!is_string($libraryDir)){
+            mklog(2, "Failed to read libraryDir setting");
+            return false;
         }
-        else{
-            if($autoDownload){
-                if($i < 2){
-                    self::downloadVersion($version);
-                    $i++;
-                    goto start;
-                }
+
+        $file = $libraryDir . "\\" . $version . ".jar";
+        
+        if(!downloader::downloadFile($versionData['downloads']['server']['url'], $file)){
+            mklog(2, "Failed to download " . $version . ".jar");
+            return false;
+        }
+
+        if(isset($versionData['downloads']['server']['sha1']) && is_string($versionData['downloads']['server']['sha1'])){
+            if(sha1_file($file) !== $versionData['downloads']['server']['sha1']){
+                mklog(2, "The sha1 for " . $version . ".jar did not match the provided sha1");
+                unlink($file);
+                return false;
             }
         }
-        return false;
+        else{
+            mklog(2, "Unable to verify sha1 for " . $version . ".jar");
+        }
+
+        json::writeFile($libraryDir . "\\" . $version . ".json", $versionData);
+
+        return $file;
     }
-    public static function listVersions(string $type):array{
-        if($type !== "snapshot"){
+    public static function filePath(string $version, bool $metadata=false, bool $autoDownload=true):string|false{
+        $libraryDir = settings::read("libraryDir");
+        if(!is_string($libraryDir)){
+            mklog(2, "Failed to read libraryDir setting");
+            return false;
+        }
+
+        $ext = $metadata ? ".json" : ".jar";
+        $file = $libraryDir . "\\" . $version . $ext;
+
+        if(is_file($file)){
+            return $file;
+        }
+
+        if(!$autoDownload){
+            return false;
+        }
+
+        return self::downloadVersion($version);
+    }
+    public static function listVersions(string $type="release"):array|false{
+        if($type !== "snapshot" && $type !== "release"){
             $type = "release";
         }
-        $versionsData = json::readFile("https://launchermeta.mojang.com/mc/game/version_manifest.json",false);
-        $listedVersions = array();
+
+        $versionsData = json::readFile("https://launchermeta.mojang.com/mc/game/version_manifest.json");
+        if(!is_array($versionsData)){
+            mklog(2, "Failed to read mojang versions manifest");
+            return false;
+        }
+
+        if(!isset($versionsData['versions']) || !is_array($versionsData['versions'])){
+            mklog(2, "Failed to get versions list");
+            return false;
+        }
+
+        $listedVersions = [];
         foreach($versionsData['versions'] as $versionData){
-            if($versionData['type'] === $type){
+            if(is_array($versionData) && isset($versionData['type']) && $versionData['type'] === $type){
                 $listedVersions[] = $versionData['id'];
             }
         }
+
         return $listedVersions;
     }
 }
