@@ -152,4 +152,71 @@ class minecraft_releases_api{
 
         return $data['javaVersion']['majorVersion'];
     }
+    public static function getVersionReleaseTimes(bool $online=true):array|false{
+        if($online){
+            $versionsData = json::readFile("https://launchermeta.mojang.com/mc/game/version_manifest.json");
+            if(!is_array($versionsData)){
+                mklog(2, "Failed to read mojang versions manifest");
+                return false;
+            }
+
+            if(!isset($versionsData['versions']) || !is_array($versionsData['versions'])){
+                mklog(2, "Failed to get versions list");
+                return false;
+            }
+
+            $times = [];
+            foreach($versionsData['versions'] as $version){
+                if(is_array($version) && isset($version['id']) && is_string($version['id']) && isset($version['releaseTime']) && is_string($version['releaseTime'])){
+                    $times[$version['id']] = strtotime($version['releaseTime']);
+                }
+            }
+
+            $libraryDir = settings::read('libraryDir');
+            if(is_string($libraryDir)){
+                if(!json::writeFile($libraryDir . "\\versionTimes.json", $times, true)){
+                    mklog(2, "Failed to cache minecraft release times");
+                }
+            }
+            else{
+                mklog(2, "Failed to read libraryDir setting");
+            }
+
+            return $times;
+        }
+        else{
+            $libraryDir = settings::read('libraryDir');
+            if(!is_string($libraryDir)){
+                mklog(2, "Failed to read libraryDir setting");
+                return false;
+            }
+
+            $times = json::readFile($libraryDir . "\\versionTimes.json");
+            if(!is_array($times)){
+                mklog(2, "Failed to read cache for minecraft release times");
+                return false;
+            }
+
+            return $times;
+        }
+    }
+    public static function compareVersionsUsingTimes(string $v1, string $v2, bool $allowCheckingOnlineForUnknownVersions=true):int{
+        $times = self::getVersionReleaseTimes(false);
+        if(!is_array($times) || !isset($times[$v1]) || !isset($times[$v2])){
+            if($allowCheckingOnlineForUnknownVersions){
+                mklog(1, "Checking online for info on " . $v1 . " and " . $v2);
+                $times = self::getVersionReleaseTimes(true);
+                if(!is_array($times) || !isset($times[$v1]) || !isset($times[$v2])){
+                    mklog(2, "Failed to check online for info on " . $v1 . " and " . $v2);
+                    return -2;
+                }
+            }
+            else{
+                mklog(2, "Failed to get info for " . $v1 . " and " . $v2);
+                return -2;
+            }
+        }
+
+        return $times[$v1] <=> $times[$v2];
+    }
 }
